@@ -1,6 +1,8 @@
 // Main function
 package main
 
+// N.B. When testing with "go run", you have to list all relevant files: go run main.go config.go
+
 import (
 	"encoding/json"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 // Base URL for the REST api
@@ -119,9 +122,46 @@ func main() {
 	heartbeat := int(temp)
 	Debug.Printf("Heartbeat: %dms", heartbeat)
 
-	// TODO: Login
+	// Send login
+	login_msg := fmt.Sprintf(`{
+        "op": 2,
+        "d": {
+            "token": %q,
+            "properties": {
+                "$os": "linux",
+                "$browser": "Disgordian",
+                "$device": "Disgordian",
+                "$referrer": "",
+                "$referring_domain": ""
+            },
+            "compress": false,
+            "large_threshold": 250,
+            "shard": [0,1]
+        }}`, config["bot_token"])
+	websocket.Message.Send(ws, login_msg)
+	Debug.Printf("Sent login")
+
+	// Receive the READY message and store sequence number
+	websocket.Message.Receive(ws, &buffer)
+	Debug.Printf("Received reply")
+	err = json.Unmarshal(buffer, &payload)
+	if err != nil {
+		panic(fmt.Sprintf("Couldn't decode websocket payload: %q", err))
+	}
+	temp, ok = payload["s"].(float64)
+	if !ok {
+		panic(fmt.Sprintf("Couldn't get sequence number from payload: %q", payload))
+	}
+	sequence := int(temp)
+	Debug.Printf("Sequence number is %d", sequence)
 
 	// TODO: Go run heartbeats
+	heartbeat_msg := `{"op": 1, "d": %d}`
+	for i := 0; i < 3; i++ {
+		time.Sleep(time.Duration(heartbeat) * time.Millisecond)
+		Debug.Printf(heartbeat_msg, sequence)
+		websocket.Message.Send(ws, fmt.Sprintf(heartbeat_msg, sequence))
+	}
 
 	// TODO: Enter read loop
 }
