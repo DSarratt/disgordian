@@ -25,7 +25,6 @@ const GATEWAY_VERSION = "?v=5&encoding=json"
 // These are shared between multiple goroutines
 var seq_no int
 var seq_lock = &sync.Mutex{}
-var heartbeat int
 
 // Outgoing websocket messages should be sent here
 var SendQueue = make(chan string)
@@ -59,11 +58,11 @@ func LogInit(
 		log.Ldate|log.Ltime)
 }
 
-func SendHeartbeats(ws *websocket.Conn) {
+func SendHeartbeats(ws *websocket.Conn, hb_length int) {
 	// Loops indefinitely, sending heartbeats
 	heartbeat_msg := `{"op": 1, "d": %d}`
 	for {
-		time.Sleep(time.Duration(heartbeat) * time.Millisecond)
+		time.Sleep(time.Duration(hb_length) * time.Millisecond)
 		seq_lock.Lock()
 		temp := fmt.Sprintf(heartbeat_msg, seq_no)
 		seq_lock.Unlock()
@@ -149,8 +148,8 @@ func main() {
 	if !ok {
 		panic(fmt.Sprintf("Couldn't get heartbeat from payload: %q", dload))
 	}
-	heartbeat = int(temp)
-	Debug.Printf("Heartbeat: %dms", heartbeat)
+	hb_length := int(temp)
+	Debug.Printf("Heartbeat length: %dms", hb_length)
 
 	// Send login
 	login_msg := fmt.Sprintf(`{
@@ -188,7 +187,7 @@ func main() {
 	Debug.Printf("Sequence number is %d", seq_no)
 
 	// Start the heartbeating loop
-	go SendHeartbeats(ws)
+	go SendHeartbeats(ws, hb_length)
 
 	// Start the message sending loop
 	go SendLoop(ws, SendQueue)
