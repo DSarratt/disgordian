@@ -3,6 +3,10 @@ package main
 
 // N.B. When testing with "go run", you have to list all relevant files: go run main.go config.go
 
+// TODO: proper exit handler (a sync.Once exit() function?)
+// TODO: handle SIGINT/SIGKILL
+// TODO: Scoping/break into functions
+
 import (
 	"encoding/json"
 	"fmt"
@@ -80,7 +84,6 @@ func SendLoop(ws *websocket.Conn, ch <-chan string) {
 }
 
 func main() {
-	// TODO: Scoping/break into functions
 	// Setup logging
 	LogInit(os.Stdout, os.Stdout, os.Stdout)
 
@@ -193,6 +196,7 @@ func main() {
 	go SendLoop(ws, SendQueue)
 
 	// Read incoming messages indefinitely
+	// N.B. the socket is not gracefully closed on exit!
 	for {
 		if err = websocket.Message.Receive(ws, &buffer); err != nil {
 			// Websocket is probably closed, we can exit now
