@@ -193,10 +193,25 @@ func main() {
 	// Start the message sending loop
 	go SendLoop(ws, SendQueue)
 
-	// TODO: Enter read loop
-	for i:=0 ; i < 20 ; i++ {
-		time.Sleep(time.Second)
-		Debug.Printf("Sleeping")
+	// Read incoming messages indefinitely
+	for {
+		if err = websocket.Message.Receive(ws, &buffer); err != nil {
+			// Websocket is probably closed, we can exit now
+			Debug.Printf("Websocket closed, disconnecting")
+			break
+		}
+		Debug.Printf("Received %q", buffer)
+		// Update sequence number
+		err = json.Unmarshal(buffer, &payload)
+		if err != nil {
+			panic(fmt.Sprintf("Couldn't decode websocket payload: %q", err))
+		}
+		// If we can't decode a sequence number here, assume it was nil
+		temp, ok = payload["s"].(float64)
+		if ok {
+			seq_lock.Lock()
+			seq_no = int(temp)
+			seq_lock.Unlock()
+		}
 	}
-	Debug.Printf("Done here")
 }
