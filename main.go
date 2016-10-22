@@ -27,6 +27,9 @@ var seq_no int
 var seq_lock = &sync.Mutex{}
 var heartbeat int
 
+// Outgoing websocket messages should be sent here
+var SendQueue = make(chan string)
+
 // Logging functions
 var (
 	Debug   *log.Logger
@@ -56,16 +59,25 @@ func LogInit(
 		log.Ldate|log.Ltime)
 }
 
-func SendHeartbeats (ws *websocket.Conn) {
+func SendHeartbeats(ws *websocket.Conn) {
 	// Loops indefinitely, sending heartbeats
 	heartbeat_msg := `{"op": 1, "d": %d}`
 	for {
 		time.Sleep(time.Duration(heartbeat) * time.Millisecond)
 		seq_lock.Lock()
-		Debug.Printf("Sending heartbeat, seq %d", seq_no)
-		websocket.Message.Send(ws, fmt.Sprintf(heartbeat_msg, seq_no))
+		temp := fmt.Sprintf(heartbeat_msg, seq_no)
 		seq_lock.Unlock()
+		SendQueue <- temp
 	}
+}
+
+func SendLoop(ws *websocket.Conn, ch <-chan string) {
+	// Reads indefinitely from a channel for messages to send down the websocket
+	for msg := range ch {
+		Debug.Printf("Sending %q", msg)
+		websocket.Message.Send(ws, msg)
+	}
+	Debug.Printf("Send channel closed, SendLoop exiting")
 }
 
 func main() {
@@ -175,8 +187,11 @@ func main() {
 	seq_lock.Unlock()
 	Debug.Printf("Sequence number is %d", seq_no)
 
-	// TODO: Go run heartbeats
+	// Start the heartbeating loop
 	go SendHeartbeats(ws)
+
+	// Start the message sending loop
+	go SendLoop(ws, SendQueue)
 
 	// TODO: Enter read loop
 	for i:=0 ; i < 20 ; i++ {
