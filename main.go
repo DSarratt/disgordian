@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,11 @@ const BASE_URL = "https://discordapp.com/api"
 
 // What version of the gateway protocol do we speak?
 const GATEWAY_VERSION = "?v=5&encoding=json"
+
+// These are shared between multiple goroutines
+var seq_no int
+var seq_lock = &sync.Mutex{}
+var heartbeat int
 
 // Logging functions
 var (
@@ -48,6 +54,18 @@ func LogInit(
 	Error = log.New(errorHandle,
 		"ERROR: ",
 		log.Ldate|log.Ltime)
+}
+
+func SendHeartbeats (ws *websocket.Conn) {
+	// Loops indefinitely, sending heartbeats
+	heartbeat_msg := `{"op": 1, "d": %d}`
+	for {
+		time.Sleep(time.Duration(heartbeat) * time.Millisecond)
+		seq_lock.Lock()
+		Debug.Printf("Sending heartbeat, seq %d", seq_no)
+		websocket.Message.Send(ws, fmt.Sprintf(heartbeat_msg, seq_no))
+		seq_lock.Unlock()
+	}
 }
 
 func main() {
@@ -119,7 +137,7 @@ func main() {
 	if !ok {
 		panic(fmt.Sprintf("Couldn't get heartbeat from payload: %q", dload))
 	}
-	heartbeat := int(temp)
+	heartbeat = int(temp)
 	Debug.Printf("Heartbeat: %dms", heartbeat)
 
 	// Send login
@@ -152,16 +170,18 @@ func main() {
 	if !ok {
 		panic(fmt.Sprintf("Couldn't get sequence number from payload: %q", payload))
 	}
-	sequence := int(temp)
-	Debug.Printf("Sequence number is %d", sequence)
+	seq_lock.Lock()
+	seq_no = int(temp)
+	seq_lock.Unlock()
+	Debug.Printf("Sequence number is %d", seq_no)
 
 	// TODO: Go run heartbeats
-	heartbeat_msg := `{"op": 1, "d": %d}`
-	for i := 0; i < 3; i++ {
-		time.Sleep(time.Duration(heartbeat) * time.Millisecond)
-		Debug.Printf(heartbeat_msg, sequence)
-		websocket.Message.Send(ws, fmt.Sprintf(heartbeat_msg, sequence))
-	}
+	go SendHeartbeats(ws)
 
 	// TODO: Enter read loop
+	for i:=0 ; i < 20 ; i++ {
+		time.Sleep(time.Second)
+		Debug.Printf("Sleeping")
+	}
+	Debug.Printf("Done here")
 }
