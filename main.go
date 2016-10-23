@@ -193,7 +193,7 @@ func main() {
 	Debug.Printf("Sent login")
 
 	// Receive the READY message and store sequence number
-	websocket.Message.Receive(ws, &payload)
+	websocket.JSON.Receive(ws, &payload)
 	Debug.Printf("Received payload %v", payload)
 	if payload.Op == nil {
 		panic(fmt.Sprintf("Couldn't find Op of incoming payload"))
