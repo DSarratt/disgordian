@@ -33,6 +33,26 @@ var seq_lock = &sync.Mutex{}
 // Outgoing websocket messages should be sent here
 var SendQueue = make(chan string)
 
+// What does the basic Discord payload look like?
+type Payload struct {
+	// Op is a pointer because we need to know the difference between 0 and nil
+	Op *int
+	S  int
+	T  string
+	D  map[string]*json.RawMessage
+}
+
+// Somewhat circuitous way to print a Payload (by converting it back to JSON...)
+func (p Payload) String() string {
+	val, err := json.Marshal(p)
+	if err != nil {
+		// Marshalling failed???
+		return "{}"
+	} else {
+		return string(val)
+	}
+}
+
 // Logging functions
 var (
 	Debug   *log.Logger
@@ -110,7 +130,7 @@ func main() {
 	if !ok {
 		panic("Didn't receive a url from the gateway URL fetch")
 	}
-	Debug.Printf("Received gateway URL: %q", url)
+	Debug.Printf("Received gateway URL: %v", url)
 
 	// TODO: Initialise plugins
 	//var pluginlist []func(<-chan *map[string]interface{})
@@ -127,65 +147,47 @@ func main() {
 	defer ws.Close()
 	Debug.Printf("Websocket opened")
 
-	// TODO: get websocket.JSON working?
-	/*
-		var data Payload
-		websocket.JSON.Receive(ws, &data)
-		fmt.Println(data)
-	*/
-	// Receive first packet, decode from JSON
-	// TODO: Timeout on socket read
-	var buffer []byte
-	websocket.Message.Receive(ws, &buffer)
-	Debug.Printf("Received websocket payload: %q", buffer)
-	var payload map[string]interface{}
-	err = json.Unmarshal(buffer, &payload)
-	if err != nil {
-		panic(fmt.Sprintf("Couldn't decode websocket payload: %q", err))
+	// Receive first payload, get heartbeat interval
+	var payload Payload
+	websocket.JSON.Receive(ws, &payload)
+	Debug.Printf("Received payload %v", payload)
+	if payload.Op == nil {
+		panic(fmt.Sprintf("Couldn't find Op of incoming payload"))
 	}
-	dload, ok := payload["d"].(map[string]interface{})
-	if !ok {
-		panic(fmt.Sprintf("Couldn't get event data from payload: %q", payload["d"]))
+	var hb_length int
+	json.Unmarshal(*payload.D["heartbeat_interval"], &hb_length)
+	if hb_length == 0 {
+		panic(fmt.Sprintf("Couldn't get heartbeat interval from &q", payload))
 	}
-	temp, ok := dload["heartbeat_interval"].(float64)
-	if !ok {
-		panic(fmt.Sprintf("Couldn't get heartbeat from payload: %q", dload))
-	}
-	hb_length := int(temp)
 	Debug.Printf("Heartbeat length: %dms", hb_length)
 
 	// Send login
 	login_msg := fmt.Sprintf(`{
-        "op": 2,
-        "d": {
-            "token": %q,
-            "properties": {
-                "$os": "linux",
-                "$browser": "Disgordian",
-                "$device": "Disgordian",
-                "$referrer": "",
-                "$referring_domain": ""
-            },
-            "compress": false,
-            "large_threshold": 250,
-            "shard": [0,1]
-        }}`, config["bot_token"])
+		"op": 2,
+		"d": {
+			"token": %q,
+			"properties": {
+				"$os": "linux",
+				"$browser": "Disgordian",
+				"$device": "Disgordian",
+				"$referrer": "",
+				"$referring_domain": ""
+			},
+			"compress": false,
+			"large_threshold": 250,
+			"shard": [0,1]
+		}}`, config["bot_token"])
 	websocket.Message.Send(ws, login_msg)
 	Debug.Printf("Sent login")
 
 	// Receive the READY message and store sequence number
-	websocket.Message.Receive(ws, &buffer)
-	Debug.Printf("Received reply")
-	err = json.Unmarshal(buffer, &payload)
-	if err != nil {
-		panic(fmt.Sprintf("Couldn't decode websocket payload: %q", err))
-	}
-	temp, ok = payload["s"].(float64)
-	if !ok {
-		panic(fmt.Sprintf("Couldn't get sequence number from payload: %q", payload))
+	websocket.Message.Receive(ws, &payload)
+	Debug.Printf("Received payload %v", payload)
+	if payload.Op == nil {
+		panic(fmt.Sprintf("Couldn't find Op of incoming payload"))
 	}
 	seq_lock.Lock()
-	seq_no = int(temp)
+	seq_no = payload.S
 	seq_lock.Unlock()
 	Debug.Printf("Sequence number is %d", seq_no)
 
@@ -198,22 +200,16 @@ func main() {
 	// Read incoming messages indefinitely
 	// N.B. the socket is not gracefully closed on exit!
 	for {
-		if err = websocket.Message.Receive(ws, &buffer); err != nil {
+		if err = websocket.JSON.Receive(ws, &payload); err != nil {
 			// Websocket is probably closed, we can exit now
 			Debug.Printf("Websocket closed, disconnecting")
 			break
 		}
-		Debug.Printf("Received %q", buffer)
+		Debug.Printf("Received payload %v", payload)
 		// Update sequence number
-		err = json.Unmarshal(buffer, &payload)
-		if err != nil {
-			panic(fmt.Sprintf("Couldn't decode websocket payload: %q", err))
-		}
-		// If we can't decode a sequence number here, assume it was nil
-		temp, ok = payload["s"].(float64)
-		if ok {
+		if payload.S != 0 {
 			seq_lock.Lock()
-			seq_no = int(temp)
+			seq_no = payload.S
 			seq_lock.Unlock()
 		}
 	}
