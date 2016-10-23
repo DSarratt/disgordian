@@ -3,9 +3,7 @@ package main
 
 // N.B. When testing with "go run", you have to list all relevant files: go run main.go config.go
 
-// TODO: proper exit handler (a sync.Once exit() function?)
-// TODO: handle SIGINT/SIGKILL
-// TODO: Scoping/break into functions
+// TODO: A single unified process for polling all input/output channels?
 
 import (
 	"encoding/json"
@@ -16,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
 	"time"
 )
@@ -214,8 +213,16 @@ func main() {
 	// Start the message sending loop
 	go SendLoop(ws, SendQueue, hb_length)
 
+	// Handle signals nicely
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, os.Interrupt)
+	go func() {
+		// Wait until a signal is received, then shut down
+		<-sigchan
+		ShutDownOnce.Do(ShutDown)
+	}()
+
 	// Read incoming messages indefinitely
-	// N.B. the socket is not gracefully closed on exit!
 	for {
 		if err = websocket.JSON.Receive(ws, &payload); err != nil {
 			// Websocket is probably closed, we can exit now
