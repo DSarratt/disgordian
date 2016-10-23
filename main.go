@@ -33,6 +33,9 @@ var seq_lock = &sync.Mutex{}
 // Outgoing websocket messages should be sent here
 var SendQueue = make(chan string)
 
+// This is the websocket itself
+var ws *websocket.Conn
+
 // What does the basic Discord payload look like?
 type Payload struct {
 	// Op is a pointer because we need to know the difference between 0 and nil
@@ -103,6 +106,15 @@ func SendLoop(ws *websocket.Conn, ch <-chan string) {
 	Debug.Printf("Send channel closed, SendLoop exiting")
 }
 
+// Gracefully close any open handles and exit
+// This function should be called once only
+func ShutDown() {
+	close(SendQueue)
+	ws.Close()
+}
+
+var ShutDownOnce sync.Once
+
 func main() {
 	// Setup logging
 	LogInit(os.Stdout, os.Stdout, os.Stdout)
@@ -140,11 +152,11 @@ func main() {
 	// The 'plugins' package would be nice, but it's only in dev...
 
 	// Start websocket
-	ws, err := websocket.Dial(url+GATEWAY_VERSION, "", "https://discordapp.com")
+	ws, err = websocket.Dial(url+GATEWAY_VERSION, "", "https://discordapp.com")
 	if err != nil {
 		panic(fmt.Sprintf("Failed to open websocket: %q", err))
 	}
-	defer ws.Close()
+	defer ShutDownOnce.Do(ShutDown)
 	Debug.Printf("Websocket opened")
 
 	// Receive first payload, get heartbeat interval
