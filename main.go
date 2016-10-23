@@ -85,25 +85,33 @@ func LogInit(
 		log.Ldate|log.Ltime)
 }
 
-func SendHeartbeats(ws *websocket.Conn, hb_length int) {
-	// Loops indefinitely, sending heartbeats
-	heartbeat_msg := `{"op": 1, "d": %d}`
-	for {
-		time.Sleep(time.Duration(hb_length) * time.Millisecond)
-		seq_lock.Lock()
-		temp := fmt.Sprintf(heartbeat_msg, seq_no)
-		seq_lock.Unlock()
-		SendQueue <- temp
-	}
-}
+// Reads indefinitely from a channel for messages to send down the websocket
+func SendLoop(ws *websocket.Conn, msg_ch <-chan string, hb_length int) {
+	// Start the heartbeat ticker
+	const heartbeat_msg = `{"op": 1, "d": %d}`
+	pacemaker := time.Tick(time.Duration(hb_length) * time.Millisecond)
 
-func SendLoop(ws *websocket.Conn, ch <-chan string) {
-	// Reads indefinitely from a channel for messages to send down the websocket
-	for msg := range ch {
-		Debug.Printf("Sending %q", msg)
+	// Poll for messages
+	for {
+		var msg string
+		var open bool
+		select {
+		// Make sure our message channel is still open
+		case msg, open = <-msg_ch:
+			if !open {
+				Debug.Printf("Send channel closed, SendLoop exiting")
+				return
+			}
+		// If it's time to heartbeat, create one
+		case <-pacemaker:
+			seq_lock.Lock()
+			msg = fmt.Sprintf(heartbeat_msg, seq_no)
+			seq_lock.Unlock()
+		}
+		// Actually send the message
+		Debug.Printf("Sending %v", msg)
 		websocket.Message.Send(ws, msg)
 	}
-	Debug.Printf("Send channel closed, SendLoop exiting")
 }
 
 // Gracefully close any open handles and exit
@@ -203,11 +211,8 @@ func main() {
 	seq_lock.Unlock()
 	Debug.Printf("Sequence number is %d", seq_no)
 
-	// Start the heartbeating loop
-	go SendHeartbeats(ws, hb_length)
-
 	// Start the message sending loop
-	go SendLoop(ws, SendQueue)
+	go SendLoop(ws, SendQueue, hb_length)
 
 	// Read incoming messages indefinitely
 	// N.B. the socket is not gracefully closed on exit!
