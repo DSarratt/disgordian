@@ -4,6 +4,7 @@ package main
 // N.B. When testing with "go run", you have to list all relevant files: go run main.go config.go
 
 // TODO: Load config from ini file
+// TODO: Handle login failures
 
 import (
 	"encoding/json"
@@ -24,6 +25,9 @@ const BASE_URL = "https://discordapp.com/api"
 
 // What version of the gateway protocol do we speak?
 const GATEWAY_VERSION = "?v=5&encoding=json"
+
+// What does a heartbeat look like?
+const HEARTBEAT_MSG = `{"op": 1, "d": %d}`
 
 ///////////////////////////////////////////////////////////////////////
 // Globals shared between init/main and the ReadBuffer
@@ -106,7 +110,6 @@ func main() {
 	go ReadBuffer()
 
 	// Start the heartbeat ticker
-	const heartbeat_msg = `{"op": 1, "d": %d}`
 	var seq_no int
 	pacemaker := time.Tick(time.Duration(hb_length) * time.Millisecond)
 
@@ -136,7 +139,7 @@ func main() {
 
 		// If it's time to heartbeat, create one
 		case <-pacemaker:
-			msg := fmt.Sprintf(heartbeat_msg, seq_no)
+			msg := fmt.Sprintf(HEARTBEAT_MSG, seq_no)
 			Debug.Printf("Sending %v", msg)
 			websocket.Message.Send(ws, msg)
 
