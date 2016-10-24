@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"time"
 )
 
@@ -99,7 +98,7 @@ func LogInit(
 // Sends heartbeats
 func main() {
 	// Clean up sockets nicely when we finish
-	defer ShutDownOnce.Do(ShutDown)
+	defer ws.Close()
 
 	// Add a signal handler
 	sigchan := make(chan os.Signal, 1)
@@ -167,16 +166,6 @@ func ReadBuffer() {
 		RecvQueue <- payload
 	}
 }
-
-// Gracefully close any open handles and exit
-// This function should be called once only
-func ShutDown() {
-	Debug.Printf("ShutDown called")
-	ws.Close()
-	close(SendQueue)
-}
-
-var ShutDownOnce sync.Once
 
 // Open the websocket and login
 func init() {
