@@ -3,7 +3,6 @@ package main
 
 // N.B. When testing with "go run", you have to list all relevant files: go run main.go config.go
 
-// TODO: A single unified process for polling all input/output channels?
 // TODO: Load config from ini file
 
 import (
@@ -26,18 +25,21 @@ const BASE_URL = "https://discordapp.com/api"
 // What version of the gateway protocol do we speak?
 const GATEWAY_VERSION = "?v=5&encoding=json"
 
-// This is the last sequence number we've received from the server
-// These are shared between multiple goroutines
-var seq_no int
-var seq_lock = &sync.Mutex{}
-
+///////////////////////////////////////////////////////////////////////
+// Globals shared between init/main and the ReadBuffer
 // Outgoing websocket messages should be sent here
 var SendQueue = make(chan string)
+
 // Incoming websocket messages are routed through here
 var RecvQueue = make(chan Payload)
 
 // This is the websocket itself
 var ws *websocket.Conn
+
+// How long do we wait between heartbeats?
+var hb_length int
+
+///////////////////////////////////////////////////////////////////////
 
 // What does the basic Discord payload look like?
 type Payload struct {
@@ -92,27 +94,44 @@ func LogInit(
 // Reads payloads from the websocket and handles them
 // Delivers any messages queued for sending
 // Sends heartbeats
-func MainLoop(ws *websocket.Conn, msg_out <-chan string, msg_in <-chan Payload, hb_length int) {
-	// When this loop exits, the program is over
+func main() {
+	// Clean up sockets nicely when we finish
 	defer ShutDownOnce.Do(ShutDown)
+
+	// Handle signals nicely
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, os.Interrupt)
+	go func() {
+		// Wait until a signal is received, then shut down
+		<-sigchan
+		ShutDownOnce.Do(ShutDown)
+	}()
+
+	// Start buffering incoming messages into our queue
+	go ReadBuffer()
 
 	// Start the heartbeat ticker
 	const heartbeat_msg = `{"op": 1, "d": %d}`
+	var seq_no int
 	pacemaker := time.Tick(time.Duration(hb_length) * time.Millisecond)
 
 	// Poll for messages
 	for {
 		select {
 		// Receive any incoming messages
-		case _, open := <-msg_in:
+		case msg, open := <-RecvQueue:
 			if !open {
 				Debug.Printf("Receive channel closed, SendLoop exiting")
 				return
 			}
+			// Update sequence number
+			if msg.S != 0 {
+				seq_no = msg.S
+			}
 			// TODO: Handle incoming messages
 
 		// Deliver any outgoing messages
-		case msg, open := <-msg_out:
+		case msg, open := <-SendQueue:
 			if !open {
 				Debug.Printf("Send channel closed, SendLoop exiting")
 				return
@@ -122,25 +141,39 @@ func MainLoop(ws *websocket.Conn, msg_out <-chan string, msg_in <-chan Payload, 
 
 		// If it's time to heartbeat, create one
 		case <-pacemaker:
-			seq_lock.Lock()
 			msg := fmt.Sprintf(heartbeat_msg, seq_no)
-			seq_lock.Unlock()
 			Debug.Printf("Sending %v", msg)
 			websocket.Message.Send(ws, msg)
 		}
 	}
 }
 
+func ReadBuffer() {
+	// Read incoming messages indefinitely
+	var payload Payload
+	for {
+		if err := websocket.JSON.Receive(ws, &payload); err != nil {
+			// Websocket is probably closed, we can exit now
+			Debug.Printf("Websocket closed, disconnecting")
+			break
+		}
+		Debug.Printf("Received payload %v", payload)
+		// Push to the main loop
+		RecvQueue <- payload
+	}
+}
+
 // Gracefully close any open handles and exit
 // This function should be called once only
 func ShutDown() {
-	close(SendQueue)
 	ws.Close()
+	close(SendQueue)
 }
 
 var ShutDownOnce sync.Once
 
-func main() {
+// Open the websocket and login
+func init() {
 	// Setup logging
 	LogInit(os.Stdout, os.Stdout, os.Stdout)
 
@@ -181,7 +214,6 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to open websocket: %q", err))
 	}
-	defer ShutDownOnce.Do(ShutDown)
 	Debug.Printf("Websocket opened")
 
 	// Receive first payload, get heartbeat interval
@@ -191,7 +223,6 @@ func main() {
 	if payload.Op == nil {
 		panic(fmt.Sprintf("Couldn't find Op of incoming payload"))
 	}
-	var hb_length int
 	json.Unmarshal(*payload.D["heartbeat_interval"], &hb_length)
 	if hb_length == 0 {
 		panic(fmt.Sprintf("Couldn't get heartbeat interval from &q", payload))
@@ -216,45 +247,4 @@ func main() {
 		}}`, config["bot_token"])
 	websocket.Message.Send(ws, login_msg)
 	Debug.Printf("Sent login")
-
-	// Receive the READY message and store sequence number
-	websocket.JSON.Receive(ws, &payload)
-	Debug.Printf("Received payload %v", payload)
-	if payload.Op == nil {
-		panic(fmt.Sprintf("Couldn't find Op of incoming payload"))
-	}
-	seq_lock.Lock()
-	seq_no = payload.S
-	seq_lock.Unlock()
-	Debug.Printf("Sequence number is %d", seq_no)
-
-	// Start the main reading loop
-	go MainLoop(ws, SendQueue, RecvQueue, hb_length)
-
-	// Handle signals nicely
-	sigchan := make(chan os.Signal, 1)
-	signal.Notify(sigchan, os.Interrupt)
-	go func() {
-		// Wait until a signal is received, then shut down
-		<-sigchan
-		ShutDownOnce.Do(ShutDown)
-	}()
-
-	// Read incoming messages indefinitely
-	for {
-		if err = websocket.JSON.Receive(ws, &payload); err != nil {
-			// Websocket is probably closed, we can exit now
-			Debug.Printf("Websocket closed, disconnecting")
-			break
-		}
-		Debug.Printf("Received payload %v", payload)
-		// Update sequence number
-		if payload.S != 0 {
-			seq_lock.Lock()
-			seq_no = payload.S
-			seq_lock.Unlock()
-		}
-		// Push to the main loop
-		RecvQueue <- payload
-	}
 }
