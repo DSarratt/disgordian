@@ -102,7 +102,7 @@ func main() {
 	// Clean up sockets nicely when we finish
 	defer ShutDownOnce.Do(ShutDown)
 
-	// Handle signals nicely
+	// Add a signal handler
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, os.Interrupt)
 
@@ -150,8 +150,8 @@ func main() {
 	}
 }
 
+// Read incoming messages from websocket, and push to RecvQueue
 func ReadBuffer() {
-	// Read incoming messages indefinitely
 	var payload Payload
 	for {
 		if err := websocket.JSON.Receive(ws, &payload); err != nil {
