@@ -101,11 +101,6 @@ func main() {
 	// Handle signals nicely
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, os.Interrupt)
-	go func() {
-		// Wait until a signal is received, then shut down
-		<-sigchan
-		ShutDownOnce.Do(ShutDown)
-	}()
 
 	// Start buffering incoming messages into our queue
 	go ReadBuffer()
@@ -144,6 +139,10 @@ func main() {
 			msg := fmt.Sprintf(heartbeat_msg, seq_no)
 			Debug.Printf("Sending %v", msg)
 			websocket.Message.Send(ws, msg)
+
+		// Signals aren't handled right now, we just exit
+		case <-sigchan:
+			return
 		}
 	}
 }
@@ -166,6 +165,7 @@ func ReadBuffer() {
 // Gracefully close any open handles and exit
 // This function should be called once only
 func ShutDown() {
+	Debug.Printf("ShutDown called")
 	ws.Close()
 	close(SendQueue)
 }
