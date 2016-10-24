@@ -4,6 +4,7 @@ package main
 // N.B. When testing with "go run", you have to list all relevant files: go run main.go config.go
 
 // TODO: A single unified process for polling all input/output channels?
+// TODO: Load config from ini file
 
 import (
 	"encoding/json"
@@ -25,12 +26,15 @@ const BASE_URL = "https://discordapp.com/api"
 // What version of the gateway protocol do we speak?
 const GATEWAY_VERSION = "?v=5&encoding=json"
 
+// This is the last sequence number we've received from the server
 // These are shared between multiple goroutines
 var seq_no int
 var seq_lock = &sync.Mutex{}
 
 // Outgoing websocket messages should be sent here
 var SendQueue = make(chan string)
+// Incoming websocket messages are routed through here
+var RecvQueue = make(chan Payload)
 
 // This is the websocket itself
 var ws *websocket.Conn
@@ -84,32 +88,46 @@ func LogInit(
 		log.Ldate|log.Ltime)
 }
 
-// Reads indefinitely from a channel for messages to send down the websocket
-func SendLoop(ws *websocket.Conn, msg_ch <-chan string, hb_length int) {
+// The main process loop:
+// Reads payloads from the websocket and handles them
+// Delivers any messages queued for sending
+// Sends heartbeats
+func MainLoop(ws *websocket.Conn, msg_out <-chan string, msg_in <-chan Payload, hb_length int) {
+	// When this loop exits, the program is over
+	defer ShutDownOnce.Do(ShutDown)
+
 	// Start the heartbeat ticker
 	const heartbeat_msg = `{"op": 1, "d": %d}`
 	pacemaker := time.Tick(time.Duration(hb_length) * time.Millisecond)
 
 	// Poll for messages
 	for {
-		var msg string
-		var open bool
 		select {
-		// Make sure our message channel is still open
-		case msg, open = <-msg_ch:
+		// Receive any incoming messages
+		case _, open := <-msg_in:
+			if !open {
+				Debug.Printf("Receive channel closed, SendLoop exiting")
+				return
+			}
+			// TODO: Handle incoming messages
+
+		// Deliver any outgoing messages
+		case msg, open := <-msg_out:
 			if !open {
 				Debug.Printf("Send channel closed, SendLoop exiting")
 				return
 			}
+			Debug.Printf("Sending %v", msg)
+			websocket.Message.Send(ws, msg)
+
 		// If it's time to heartbeat, create one
 		case <-pacemaker:
 			seq_lock.Lock()
-			msg = fmt.Sprintf(heartbeat_msg, seq_no)
+			msg := fmt.Sprintf(heartbeat_msg, seq_no)
 			seq_lock.Unlock()
+			Debug.Printf("Sending %v", msg)
+			websocket.Message.Send(ws, msg)
 		}
-		// Actually send the message
-		Debug.Printf("Sending %v", msg)
-		websocket.Message.Send(ws, msg)
 	}
 }
 
@@ -210,8 +228,8 @@ func main() {
 	seq_lock.Unlock()
 	Debug.Printf("Sequence number is %d", seq_no)
 
-	// Start the message sending loop
-	go SendLoop(ws, SendQueue, hb_length)
+	// Start the main reading loop
+	go MainLoop(ws, SendQueue, RecvQueue, hb_length)
 
 	// Handle signals nicely
 	sigchan := make(chan os.Signal, 1)
@@ -236,5 +254,7 @@ func main() {
 			seq_no = payload.S
 			seq_lock.Unlock()
 		}
+		// Push to the main loop
+		RecvQueue <- payload
 	}
 }
