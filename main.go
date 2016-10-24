@@ -189,7 +189,7 @@ func init() {
 	var output_map map[string]string
 	err = json.Unmarshal(body, &output_map)
 	if err != nil {
-		panic(fmt.Sprintf("Couldn't decode HTTP response: %q", err))
+		panic(fmt.Sprintf("Couldn't decode HTTP response: %v", err))
 	}
 	url, ok := output_map["url"]
 	if !ok {
@@ -207,7 +207,7 @@ func init() {
 	// Start websocket
 	ws, err = websocket.Dial(url+GATEWAY_VERSION, "", "https://discordapp.com")
 	if err != nil {
-		panic(fmt.Sprintf("Failed to open websocket: %q", err))
+		panic(fmt.Sprintf("Failed to open websocket: %v", err))
 	}
 	Debug.Printf("Websocket opened")
 
@@ -220,7 +220,7 @@ func init() {
 	}
 	json.Unmarshal(*payload.D["heartbeat_interval"], &hb_length)
 	if hb_length == 0 {
-		panic(fmt.Sprintf("Couldn't get heartbeat interval from &q", payload))
+		panic(fmt.Sprintf("Couldn't get heartbeat interval from %v", payload))
 	}
 	Debug.Printf("Heartbeat length: %dms", hb_length)
 
@@ -228,7 +228,7 @@ func init() {
 	login_msg := fmt.Sprintf(`{
 		"op": 2,
 		"d": {
-			"token": %q,
+			"token": %v,
 			"properties": {
 				"$os": "linux",
 				"$browser": "Disgordian",
