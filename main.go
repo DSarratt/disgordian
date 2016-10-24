@@ -4,7 +4,6 @@ package main
 // N.B. When testing with "go run", you have to list all relevant files: go run main.go config.go
 
 // TODO: Load config from ini file
-// TODO: Handle login failures
 
 import (
 	"encoding/json"
@@ -120,6 +119,9 @@ func main() {
 		case msg, open := <-RecvQueue:
 			if !open {
 				Debug.Printf("Receive channel closed, SendLoop exiting")
+				if seq_no == 0 {
+					Error.Printf("Exiting before any messages received, probable login failure")
+				}
 				return
 			}
 			// Update sequence number
@@ -152,6 +154,7 @@ func main() {
 
 // Read incoming messages from websocket, and push to RecvQueue
 func ReadBuffer() {
+	defer close(RecvQueue)
 	var payload Payload
 	for {
 		if err := websocket.JSON.Receive(ws, &payload); err != nil {
