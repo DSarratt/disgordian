@@ -1,5 +1,7 @@
 # Config file for Disgordian bot
 # This is the TOML format, as described at https://github.com/toml-lang/toml
 
+[Disgordian]
+# All built-in configs appear under the [Disgordian] section
 # Your "App Bot Token" goes here
 BotToken = ""

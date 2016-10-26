@@ -105,10 +105,14 @@ func LogInit(
 
 // Read config file into global struct
 func readConfig(filename string) {
-	_, err := toml.DecodeFile(filename, &Config)
+	// Extract the Disgordian section from our config file
+	temp := struct{ Disgordian ConfigFormat }{}
+	_, err := toml.DecodeFile(filename, &temp)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to read config file: %v", err))
 	}
+	// Assign the Disgordian section to our global variable
+	Config = temp.Disgordian
 }
 
 // The main process loop:
