@@ -25,6 +25,9 @@ const GATEWAY_VERSION = "?v=5&encoding=json"
 // What does a heartbeat look like?
 const HEARTBEAT_MSG = `{"op": 1, "d": %d}`
 
+// Filename of the ini config
+var CONFIG_FILE string
+
 ///////////////////////////////////////////////////////////////////////
 // Globals shared between init/main and the ReadBuffer
 // Outgoing websocket messages should be sent here
@@ -37,16 +40,16 @@ var RecvQueue = make(chan Payload)
 var ws *websocket.Conn
 
 // How long do we wait between heartbeats?
-var hb_length int
+var hbLength int
 
 ///////////////////////////////////////////////////////////////////////
 
-// Global config
+// Disgordian's config entries
 type ConfigFormat struct {
 	BotToken string
 }
 
-var ConfigFile string
+// And the struct where we store them
 var Config ConfigFormat
 
 // What does the basic Discord payload look like?
@@ -122,8 +125,8 @@ func main() {
 	go ReadBuffer()
 
 	// Start the heartbeat ticker
-	var seq_no int
-	pacemaker := time.Tick(time.Duration(hb_length) * time.Millisecond)
+	var seqNo int
+	pacemaker := time.Tick(time.Duration(hbLength) * time.Millisecond)
 
 	// Poll for messages
 	for {
@@ -132,14 +135,14 @@ func main() {
 		case msg, open := <-RecvQueue:
 			if !open {
 				Debug.Printf("Receive channel closed, SendLoop exiting")
-				if seq_no == 0 {
+				if seqNo == 0 {
 					Error.Printf("Exiting before any messages received, probable login failure")
 				}
 				return
 			}
 			// Update sequence number
 			if msg.S != 0 {
-				seq_no = msg.S
+				seqNo = msg.S
 			}
 			// TODO: Handle incoming messages
 
@@ -154,7 +157,7 @@ func main() {
 
 		// If it's time to heartbeat, create one
 		case <-pacemaker:
-			msg := fmt.Sprintf(HEARTBEAT_MSG, seq_no)
+			msg := fmt.Sprintf(HEARTBEAT_MSG, seqNo)
 			Debug.Printf("Sending %v", msg)
 			websocket.Message.Send(ws, msg)
 
@@ -184,9 +187,9 @@ func ReadBuffer() {
 // Open the websocket and login
 func init() {
 	// Get our config file, first of all
-	flag.StringVar(&ConfigFile, "config", "config.ini", "Path to the config file")
+	flag.StringVar(&CONFIG_FILE, "config", "config.ini", "Path to the config file")
 	flag.Parse()
-	readConfig(ConfigFile)
+	readConfig(CONFIG_FILE)
 
 	// Setup logging
 	LogInit(os.Stdout, os.Stdout, os.Stdout)
@@ -205,12 +208,12 @@ func init() {
 	Debug.Printf("Received %d bytes from gateway URL fetch\n", len(body))
 
 	// Decode the JSON
-	var output_map map[string]string
-	err = json.Unmarshal(body, &output_map)
+	var outputMap map[string]string
+	err = json.Unmarshal(body, &outputMap)
 	if err != nil {
 		panic(fmt.Sprintf("Couldn't decode HTTP response: %v", err))
 	}
-	url, ok := output_map["url"]
+	url, ok := outputMap["url"]
 	if !ok {
 		panic("Didn't receive a url from the gateway URL fetch")
 	}
@@ -237,14 +240,14 @@ func init() {
 	if payload.Op == nil {
 		panic(fmt.Sprintf("Couldn't find Op of incoming payload"))
 	}
-	json.Unmarshal(*payload.D["heartbeat_interval"], &hb_length)
-	if hb_length == 0 {
+	json.Unmarshal(*payload.D["heartbeat_interval"], &hbLength)
+	if hbLength == 0 {
 		panic(fmt.Sprintf("Couldn't get heartbeat interval from %v", payload))
 	}
-	Debug.Printf("Heartbeat length: %dms", hb_length)
+	Debug.Printf("Heartbeat length: %dms", hbLength)
 
 	// Send login
-	login_msg := fmt.Sprintf(`{
+	loginMsg := fmt.Sprintf(`{
 		"op": 2,
 		"d": {
 			"token": "%v",
@@ -259,6 +262,6 @@ func init() {
 			"large_threshold": 250,
 			"shard": [0,1]
 		}}`, Config.BotToken)
-	websocket.Message.Send(ws, login_msg)
+	websocket.Message.Send(ws, loginMsg)
 	Debug.Printf("Sent login")
 }
