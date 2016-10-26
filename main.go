@@ -29,13 +29,18 @@ const HEARTBEAT_MSG = `{"op": 1, "d": %d}`
 var CONFIG_FILE string
 
 ///////////////////////////////////////////////////////////////////////
-// Globals shared between init/main and the ReadBuffer
+// Exported variables
+// And the struct where we store them
+var Config ConfigFormat
+
 // Outgoing websocket messages should be sent here
 var SendQueue = make(chan string)
 
 // Incoming websocket messages are routed through here
 var RecvQueue = make(chan Payload)
 
+///////////////////////////////////////////////////////////////////////
+// Internal variables
 // This is the websocket itself
 var ws *websocket.Conn
 
@@ -48,9 +53,6 @@ var hbLength int
 type ConfigFormat struct {
 	BotToken string
 }
-
-// And the struct where we store them
-var Config ConfigFormat
 
 // What does the basic Discord payload look like?
 type Payload struct {
