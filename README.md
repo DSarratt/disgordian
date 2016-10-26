@@ -7,4 +7,4 @@ feel free to grab whatever parts of it you like. Released under GPLv3.
 Update `config.go` with your Discord bot token. Does not support OAuth2 mechanism.
 
 ## Running
-To run (in test mode): `go run main.go config.go`
+To run (in test mode): `go run main.go --config <path_to_config_file>`
