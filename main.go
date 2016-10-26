@@ -46,6 +46,7 @@ type ConfigFormat struct {
 	BotToken string
 }
 
+var ConfigFile string
 var Config ConfigFormat
 
 // What does the basic Discord payload look like?
@@ -183,9 +184,9 @@ func ReadBuffer() {
 // Open the websocket and login
 func init() {
 	// Get our config file, first of all
-	configFile := flag.String("config", "config.ini", "Path to the config file")
+	flag.StringVar(&ConfigFile, "config", "config.ini", "Path to the config file")
 	flag.Parse()
-	readConfig(*configFile)
+	readConfig(ConfigFile)
 
 	// Setup logging
 	LogInit(os.Stdout, os.Stdout, os.Stdout)
