@@ -1,0 +1,5 @@
+# Config file for Disgordian bot
+# This is the TOML format, as described at https://github.com/toml-lang/toml
+
+# Your "App Bot Token" goes here
+BotToken = ""

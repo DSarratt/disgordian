@@ -1,13 +1,11 @@
 // Main function
 package main
 
-// N.B. When testing with "go run", you have to list all relevant files: go run main.go config.go
-
-// TODO: Load config from ini file
-
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
+	"github.com/BurntSushi/toml"
 	"golang.org/x/net/websocket" // Go get golang.org/x/net/websocket
 	"io"
 	"io/ioutil"
@@ -42,6 +40,13 @@ var ws *websocket.Conn
 var hb_length int
 
 ///////////////////////////////////////////////////////////////////////
+
+// Global config
+type ConfigFormat struct {
+	BotToken string
+}
+
+var Config ConfigFormat
 
 // What does the basic Discord payload look like?
 type Payload struct {
@@ -90,6 +95,14 @@ func LogInit(
 	Error = log.New(errorHandle,
 		"ERROR: ",
 		log.Ldate|log.Ltime)
+}
+
+// Read config file into global struct
+func readConfig(filename string) {
+	_, err := toml.DecodeFile(filename, &Config)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to read config file: %v", err))
+	}
 }
 
 // The main process loop:
@@ -169,6 +182,11 @@ func ReadBuffer() {
 
 // Open the websocket and login
 func init() {
+	// Get our config file, first of all
+	configFile := flag.String("config", "config.ini", "Path to the config file")
+	flag.Parse()
+	readConfig(*configFile)
+
 	// Setup logging
 	LogInit(os.Stdout, os.Stdout, os.Stdout)
 
@@ -239,7 +257,7 @@ func init() {
 			"compress": false,
 			"large_threshold": 250,
 			"shard": [0,1]
-		}}`, config["bot_token"])
+		}}`, Config.BotToken)
 	websocket.Message.Send(ws, login_msg)
 	Debug.Printf("Sent login")
 }
