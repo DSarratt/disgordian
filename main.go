@@ -228,7 +228,7 @@ func init() {
 	login_msg := fmt.Sprintf(`{
 		"op": 2,
 		"d": {
-			"token": %v,
+			"token": "%v",
 			"properties": {
 				"$os": "linux",
 				"$browser": "Disgordian",
