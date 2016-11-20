@@ -22,7 +22,7 @@ const BASE_URL = "https://discordapp.com/api"
 // What version of the gateway protocol do we speak?
 const GATEWAY_VERSION = "?v=5&encoding=json"
 
-// What does a heartbeat look like?
+// Template for generating heartbeats
 const HEARTBEAT_MSG = `{"op": 1, "d": %d}`
 
 // Filename of the ini config
@@ -60,7 +60,16 @@ type Payload struct {
 	Op *int
 	S  int
 	T  string
-	D  map[string]*json.RawMessage
+	D  *json.RawMessage
+}
+
+// Discord's "Message" object
+type DMessage struct {
+	Id         string
+	Channel_id string
+	Content    string
+	Timestamp  string
+	User_id    string
 }
 
 // Somewhat circuitous way to print a Payload (by converting it back to JSON...)
@@ -115,6 +124,18 @@ func readConfig(filename string) {
 	Config = temp.Disgordian
 }
 
+// Handles incoming messages
+func handleMessage(msg Payload) {
+	// Process new messages
+	if msg.T == "MESSAGE_CREATE" {
+		var content DMessage
+		json.Unmarshal(*msg.D, &content)
+		if content.Content == "foo" {
+			Debug.Printf("Bar")
+		}
+	}
+}
+
 // The main process loop:
 // Reads payloads from the websocket and handles them
 // Delivers any messages queued for sending
@@ -150,7 +171,10 @@ func main() {
 			if msg.S != 0 {
 				seqNo = msg.S
 			}
-			// TODO: Handle incoming messages
+			// Handle incoming events
+			if msg.Op != nil && *msg.Op == 0 {
+				go handleMessage(msg)
+			}
 
 		// Deliver any outgoing messages
 		case msg, open := <-SendQueue:
@@ -246,7 +270,9 @@ func init() {
 	if payload.Op == nil {
 		panic(fmt.Sprintf("Couldn't find Op of incoming payload"))
 	}
-	json.Unmarshal(*payload.D["heartbeat_interval"], &hbLength)
+	var hello struct{ Heartbeat_interval int }
+	json.Unmarshal(*payload.D, &hello)
+	hbLength = hello.Heartbeat_interval
 	if hbLength == 0 {
 		panic(fmt.Sprintf("Couldn't get heartbeat interval from %v", payload))
 	}
