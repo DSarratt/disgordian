@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 )
 
@@ -132,30 +133,43 @@ func handleMessage(msg Payload) {
 		var content DMessage
 		json.Unmarshal(*msg.D, &content)
 		if content.Content == "!ping" {
-			SendMessage(content.Channel_id, "!pong")
+			// Build the JSON payload to send to Discord
+			// Overkill for this particular payload, but it shows a correct way to do this
+			payload, _ := json.Marshal(struct {
+				Content string `json:"content"`
+			}{"!pong"})
+			SendRequest("POST", fmt.Sprintf("/channels/%v/messages", content.Channel_id), payload)
 		}
 	}
 }
 
-func SendMessage(channel string, content string) {
-	Debug.Printf("Sending '%v' to channel %v", content, channel)
-	// Build the JSON payload to send to Discord
-	body, _ := json.Marshal(struct {
-		Content string `json:"content"`
-	}{content})
+// Sends an authenticated HTTP request to the Discord API
+// You can pass the Discord documented path (e.g. /channels/{channel.id})
+// without the base API path in front
+func SendRequest(method string, url string, payload []byte) (*http.Response, error) {
+	// If the user did pass us a fully-qualified URL, don't mangle it
+	if !strings.HasPrefix(url, BASE_URL) {
+		// If we need to add the base URL, try to avoid adding a double slash
+		if strings.HasPrefix(url, "/") {
+			url = fmt.Sprintf("%v%v", BASE_URL, url)
+		} else {
+			url = fmt.Sprintf("%v/%v", BASE_URL, url)
+		}
+	}
 
 	// Build the HTTP client that will send the request
+	Debug.Printf("Sending '%s' to %v", payload, url)
 	client := &http.Client{}
 	req, _ := http.NewRequest(
-		"POST",
-		(fmt.Sprintf("%v/channels/%v/messages", BASE_URL, channel)),
-		bytes.NewReader(body),
+		method,
+		url,
+		bytes.NewReader(payload),
 	)
 	req.Header.Add("Authorization", fmt.Sprintf("Bot %v", Config.BotToken))
 	req.Header.Add("Content-Type", "application/json")
 
 	// Go send!
-	client.Do(req)
+	return client.Do(req)
 }
 
 // The main process loop:
