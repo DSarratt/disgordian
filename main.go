@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"time"
 )
 
@@ -140,17 +140,16 @@ func handleMessage(msg Payload) {
 func SendMessage(channel string, content string) {
 	Debug.Printf("Sending '%v' to channel %v", content, channel)
 	// Build the JSON payload to send to Discord
-	temp, _ := json.Marshal(struct {
+	body, _ := json.Marshal(struct {
 		Content string `json:"content"`
 	}{content})
-	body := string(temp[:])
 
 	// Build the HTTP client that will send the request
 	client := &http.Client{}
 	req, _ := http.NewRequest(
 		"POST",
 		(fmt.Sprintf("%v/channels/%v/messages", BASE_URL, channel)),
-		strings.NewReader(body),
+		bytes.NewReader(body),
 	)
 	req.Header.Add("Authorization", fmt.Sprintf("Bot %v", Config.BotToken))
 	req.Header.Add("Content-Type", "application/json")
